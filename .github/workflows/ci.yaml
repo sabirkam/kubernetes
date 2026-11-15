@@ -1,0 +1,63 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest backend
+      - run: python -m pytest frontend
+
+  build:
+    needs: test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        if: github.event_name == 'push'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.service }}
+          build-args: APP_VERSION=${{ github.sha }}
+          push: ${{ github.event_name == 'push' }}
+          tags: ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+
+  # Sketch of the deploy step for Azure (AKS + ACR); not run in this demo.
+  # With GitOps (Argo CD / Flux) this job would instead commit the new tag to a config repo.
+  #
+  # deploy:
+  #   needs: build
+  #   if: github.ref == 'refs/heads/main'
+  #   runs-on: ubuntu-24.04
+  #   environment: production
+  #   permissions: { id-token: write, contents: read }
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: azure/login@v2
+  #       with: { client-id: ..., tenant-id: ..., subscription-id: ... }   # OIDC, no stored secrets
+  #     - uses: azure/aks-set-context@v4
+  #       with: { resource-group: ..., cluster-name: ... }
+  #     - run: kubectl apply -f k8s/
+  #     - run: kubectl set image deployment/backend backend=<acr>.azurecr.io/backend:${{ github.sha }}
+  #     - run: kubectl set image deployment/frontend frontend=<acr>.azurecr.io/frontend:${{ github.sha }}
+  #     - run: kubectl rollout status deployment/backend && kubectl rollout status deployment/frontend
