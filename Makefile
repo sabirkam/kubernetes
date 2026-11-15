@@ -2,7 +2,6 @@
 CLUSTER  ?= demo
 VERSION  ?= v1
 PYTHON   ?= python
-SERVICES := backend frontend
 
 .PHONY: cluster build load deploy status update rollback watch test smoke clean
 
